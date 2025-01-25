@@ -8,6 +8,7 @@ class RedisService {
   constructor() {
     this.redisClient = new IORedis(redisConfig);
     this.testPrefix = process.env.TEST_ID || 'default';
+    console.log(`Redis service initialized with prefix: ${this.testPrefix}`);
   }
 
   private getNamespacedKey(baseKey: string, paramKey: string): string {
