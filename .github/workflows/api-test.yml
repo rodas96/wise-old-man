@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - hotfix/run-parallel-tests
-    paths:
-      - "server/**"
 
 jobs:
   test:
