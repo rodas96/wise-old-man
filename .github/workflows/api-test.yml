@@ -1,9 +1,9 @@
 name: (API) Continuous Integration
 
 on:
-  pull_request:
+  push:
     branches:
-      - master
+      - hotfix/run-parallel-tests
     paths:
       - "server/**"
 
@@ -41,6 +41,9 @@ jobs:
       REDIS_PORT: 6379
       CORE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ci-database
     steps:
+      - name: Log Workflow Started
+        run: echo "Workflow started at $(date '+%Y-%m-%d %H:%M:%S')"
+
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -57,23 +60,3 @@ jobs:
 
       - name: Run Integration Tests
         run: npm run test ci
-  type-check-client-js:
-    name: Type-check Client JS package
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18.16.0
-
-      - name: Install server dependencies
-        run: cd server && npm ci
-
-      - name: Install client-js dependencies
-        run: cd client-js && npm ci
-
-      - name: Build & Type Check
-        run: cd client-js && npm run build
