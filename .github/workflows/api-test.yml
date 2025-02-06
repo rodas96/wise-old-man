@@ -1,9 +1,9 @@
 name: (API) Continuous Integration
 
 on:
-  pull_request:
+  merge:
     branches:
-      - master
+      - feature/paralel-testing
     paths:
       - "server/**"
 
