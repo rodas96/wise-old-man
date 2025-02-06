@@ -5,7 +5,12 @@ class RedisService {
   redisClient: IORedis;
 
   constructor() {
-    this.redisClient = new IORedis(redisConfig);
+    const redisDb = process.env.REDIS_DB ? parseInt(process.env.REDIS_DB, 10) : 0;
+    console.log(redisDb);
+    this.redisClient = new IORedis({
+      ...redisConfig,
+      db: redisDb
+    });
   }
 
   async getValue(baseKey: string, paramKey: string) {
