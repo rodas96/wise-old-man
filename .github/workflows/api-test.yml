@@ -8,31 +8,11 @@ on:
       - "server/**"
 
 jobs:
-  list-tests:
-    name: Discover Integration Tests
+  setup:
+    name: Setup Environment
     runs-on: ubuntu-latest
     outputs:
       test_files: ${{ steps.list.outputs.test_files }}
-    defaults:
-      run:
-        working-directory: ./server
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: List test files
-        id: list
-        run: |
-          TEST_FILES=$(find __tests__/suites/integration -name "*.test.ts" -printf '"%p", ' | sed 's/, $//')
-          echo "test_files=[$TEST_FILES]" >> $GITHUB_OUTPUT
-
-  run-tests:
-    name: Run ${{ matrix.test_file }}
-    needs: list-tests
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        test_file: ${{ fromJson(needs.list-tests.outputs.test_files) }}
     defaults:
       run:
         working-directory: ./server
@@ -53,11 +33,65 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18.16.0
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run type-checking
+        run: npm run build
+
+      - name: List test files
+        id: list
+        run: |
+          TEST_FILES=$(find __tests__/suites/integration -name "*.test.ts" | awk '{print NR-1 ":" $0}' | jq -R -s -c 'split("\n")[:-1] | map(split(":"))')
+          echo "test_files=$TEST_FILES" >> $GITHUB_OUTPUT
+
+  run-tests:
+    name: Run ${{ matrix.test_file }}
+    needs: setup
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        test_file: ${{ fromJson(needs.setup.outputs.test_files) }}
+    defaults:
+      run:
+        working-directory: ./server
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract Index and Test Name
+        id: extract
+        run: |
+          INDEX=$(echo "${{ matrix.test_file }}" | jq -r '.[0]')
+          FILE_NAME=$(basename "$(echo "${{ matrix.test_file }}" | jq -r '.[1]')" | sed 's/.test.ts//g')
+          echo "INDEX=$INDEX" >> $GITHUB_ENV
+          echo "FILE_NAME=$FILE_NAME" >> $GITHUB_ENV
+          echo "Using Index: $INDEX, File: $FILE_NAME"
+
       - name: Generate Unique Database Name
         id: db
         run: |
-          DB_NAME="ci_database_${{ matrix.test_file }}"
+          DB_NAME="ci_database_${{ env.INDEX }}"
           echo "DB_NAME=$DB_NAME" >> $GITHUB_ENV
+          echo "Database Name: $DB_NAME"
 
       - name: Create Isolated Database
         run: |
@@ -66,17 +100,37 @@ jobs:
       - name: Start Redis Instance
         id: redis
         run: |
-          REDIS_NAME="redis_${{ matrix.test_file }}"
+          REDIS_NAME="redis_${{ env.INDEX }}"
           echo "REDIS_NAME=$REDIS_NAME" >> $GITHUB_ENV
-          echo "REDIS_HOST=localhost" >> $GITHUB_ENV
           docker run -d --name $REDIS_NAME redis
 
-      - name: Run Integration Test ${{ matrix.test_file }}
+      - name: Run Integration Test ${{ env.FILE_NAME }}
         env:
           CORE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/${{ env.DB_NAME }}
           REDIS_HOST: localhost
-        run: npm test ${{ matrix.test_file }}
+        run: npm test __tests__/suites/integration/${{ env.FILE_NAME }}.test.ts
 
       - name: Cleanup Redis Container
         if: always()
         run: docker rm -f ${{ env.REDIS_NAME }} || true
+
+  type-check-client-js:
+    name: Type-check Client JS package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18.16.0
+
+      - name: Install server dependencies
+        run: cd server && npm ci
+
+      - name: Install client-js dependencies
+        run: cd client-js && npm ci
+
+      - name: Build & Type Check
+        run: cd client-js && npm run build
