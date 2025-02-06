@@ -8,7 +8,8 @@ on:
       - "server/**"
 
 jobs:
-  determine-test-count:
+  # Job to determine the list of test files and generate matrix
+  determine-test-files:
     runs-on: ubuntu-latest
     outputs:
       test_matrix: ${{ steps.generate-matrix.outputs.test_matrix }}
@@ -16,22 +17,23 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Count test files and generate matrix
+      - name: List test files and generate matrix
         id: generate-matrix
         run: |
-          TEST_COUNT=$(ls server/__tests__/suites/integration | wc -l)
-          TEST_ARRAY=$(seq -s ',' 0 $((TEST_COUNT - 1)) | sed 's/^/[/' | sed 's/$/]/')
+          TEST_FILES=$(ls server/__tests__/suites/integration/*.test.ts)
+          TEST_ARRAY=$(echo "$TEST_FILES" | sed 's|^|"/|" |' | sed 's|$|"/" |' | tr '\n' ',' | sed 's/,$//')
           echo "test_matrix=$TEST_ARRAY" >> "$GITHUB_OUTPUT"
 
+  # Main job that runs a specific test file in parallel
   test:
-    needs: determine-test-count
+    needs: determine-test-files
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: ./server
     strategy:
       matrix:
-        test_instance: ${{ fromJson(needs.determine-test-count.outputs.test_matrix) }}
+        test_file: ${{ fromJson(needs.determine-test-files.outputs.test_matrix) }}
     services:
       postgres:
         image: postgres:14
@@ -57,8 +59,7 @@ jobs:
     env:
       REDIS_HOST: localhost
       REDIS_PORT: 6379
-      REDIS_DB: ${{ matrix.test_instance }}
-      CORE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ci-database-${{ matrix.test_instance }}
+      CORE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ci-database
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -75,8 +76,9 @@ jobs:
         run: npm run build
 
       - name: Run Integration Tests
-        run: TEST_INSTANCE=${{ matrix.test_instance }} npm run test ci
+        run: TEST_FILE=${{ matrix.test_file }} npm run test $TEST_FILE
 
+  # Job to type-check the client JS package
   type-check-client-js:
     name: Type-check Client JS package
     runs-on: ubuntu-latest
