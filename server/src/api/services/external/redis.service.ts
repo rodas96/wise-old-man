@@ -3,11 +3,9 @@ import redisConfig from '../../../config/redis.config';
 
 class RedisService {
   redisClient: IORedis;
-  testPrefix: string;
 
   constructor() {
     this.redisClient = new IORedis(redisConfig);
-    this.testPrefix = process.env.TEST_ID || 'default';
     console.log(`Redis service initialized with prefix: ${this.testPrefix}`);
   }
 
