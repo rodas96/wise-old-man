@@ -1,7 +1,7 @@
 name: (API) Continuous Integration
 
 on:
-  merge:
+  push:
     branches:
       - feature/paralel-testing
     paths:
