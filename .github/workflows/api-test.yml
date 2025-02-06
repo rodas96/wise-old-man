@@ -26,9 +26,34 @@ jobs:
   test:
     needs: determine-test-count
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./server
     strategy:
       matrix:
         test_instance: ${{ fromJson(needs.determine-test-count.outputs.test_matrix) }}
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      redis:
+        image: redis
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
     env:
       REDIS_HOST: localhost
       REDIS_PORT: 6379
