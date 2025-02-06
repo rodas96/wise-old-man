@@ -5,6 +5,7 @@ class RedisService {
   redisClient: IORedis;
 
   constructor() {
+    console.log(`Connecting to Redis at ${redisConfig.host}:${redisConfig.port}`);
     this.redisClient = new IORedis(redisConfig);
   }
 

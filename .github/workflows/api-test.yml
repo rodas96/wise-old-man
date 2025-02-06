@@ -57,6 +57,7 @@ jobs:
     strategy:
       matrix:
         test_file: ${{ fromJson(needs.setup.outputs.test_files) }}
+        index: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] # Dummy index for unique names
     defaults:
       run:
         working-directory: ./server
@@ -80,7 +81,7 @@ jobs:
       - name: Generate Unique Database Name
         id: db
         run: |
-          DB_NAME="ci_database_$(echo ${{ matrix.test_file }} | tr -d './_')"
+          DB_NAME="ci_database_${{ matrix.index }}"
           echo "DB_NAME=$DB_NAME" >> $GITHUB_ENV
           echo "Database Name: $DB_NAME"
 
@@ -88,21 +89,40 @@ jobs:
         run: |
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE $DB_NAME;"
 
-      - name: Start Redis on Unique Port
+      - name: Start Redis Instance
         id: redis
         run: |
-          TEST_NAME=$(echo "${{ matrix.test_file }}" | tr '/.' '_')
-          REDIS_PORT=$((6379 + RANDOM % 1000))
-          echo "REDIS_PORT=$REDIS_PORT" >> $GITHUB_ENV
-          echo "Redis Port: $REDIS_PORT"
-          docker run -d --name redis_$TEST_NAME -p $REDIS_PORT:6379 redis
+          REDIS_NAME="redis_${{ matrix.index }}"
+          echo "REDIS_NAME=$REDIS_NAME" >> $GITHUB_ENV
+          docker run -d --name $REDIS_NAME redis
+
       - name: Run Integration Test ${{ matrix.test_file }}
         env:
           CORE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/${{ env.DB_NAME }}
           REDIS_HOST: localhost
-          REDIS_PORT: ${{ env.REDIS_PORT }}
         run: npm test ${{ matrix.test_file }}
 
       - name: Cleanup Redis Container
         if: always()
-        run: docker rm -f redis_${{ matrix.test_file }} || true
+        run: docker rm -f ${{ env.REDIS_NAME }} || true
+
+  type-check-client-js:
+    name: Type-check Client JS package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18.16.0
+
+      - name: Install server dependencies
+        run: cd server && npm ci
+
+      - name: Install client-js dependencies
+        run: cd client-js && npm ci
+
+      - name: Build & Type Check
+        run: cd client-js && npm run build
