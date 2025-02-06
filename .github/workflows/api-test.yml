@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        test_instance: ${{ range(1, fromJson(needs.determine-test-count.outputs.test_count) + 1) }}
+        test_instance: ${{ fromJson(format('[{0}]', join(',', range(0, fromJson(needs.determine-test-count.outputs.test_count) - 1)))) }}
     defaults:
       run:
         working-directory: ./server
