@@ -8,31 +8,11 @@ on:
       - "server/**"
 
 jobs:
-  list-tests:
-    name: Discover Integration Tests
+  setup:
+    name: Setup Environment
     runs-on: ubuntu-latest
     outputs:
       test_files: ${{ steps.list.outputs.test_files }}
-    defaults:
-      run:
-        working-directory: ./server
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: List test files
-        id: list
-        run: |
-          TEST_FILES=$(ls __tests__/suites/integration/*.test.ts | jq -R -s -c 'split("\n")[:-1]')
-          echo "test_files=$TEST_FILES" >> $GITHUB_OUTPUT
-
-  run-tests:
-    name: Run ${{ matrix.test_file }}
-    needs: list-tests
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        test_file: ${{ fromJson(needs.list-tests.outputs.test_files) }}
     defaults:
       run:
         working-directory: ./server
@@ -64,6 +44,39 @@ jobs:
       - name: Run type-checking
         run: npm run build
 
+      - name: List test files
+        id: list
+        run: |
+          TEST_FILES=$(ls __tests__/suites/integration/*.test.ts | jq -R -s -c 'split("\n")[:-1]')
+          echo "test_files=$TEST_FILES" >> $GITHUB_OUTPUT
+
+  run-tests:
+    name: Run ${{ matrix.test_file }}
+    needs: setup
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        test_file: ${{ fromJson(needs.setup.outputs.test_files) }}
+    defaults:
+      run:
+        working-directory: ./server
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Generate Unique Database Name
         id: db
         run: |
@@ -78,12 +91,11 @@ jobs:
       - name: Start Redis on Unique Port
         id: redis
         run: |
+          TEST_NAME=$(echo "${{ matrix.test_file }}" | tr '/.' '_')
           REDIS_PORT=$((6379 + RANDOM % 1000))
           echo "REDIS_PORT=$REDIS_PORT" >> $GITHUB_ENV
           echo "Redis Port: $REDIS_PORT"
-
-          docker run -d --name redis_${{ matrix.test_file }} -p $REDIS_PORT:6379 redis
-
+          docker run -d --name redis_$TEST_NAME -p $REDIS_PORT:6379 redis
       - name: Run Integration Test ${{ matrix.test_file }}
         env:
           CORE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/${{ env.DB_NAME }}
