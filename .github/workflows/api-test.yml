@@ -11,49 +11,24 @@ jobs:
   determine-test-count:
     runs-on: ubuntu-latest
     outputs:
-      test_count: ${{ steps.count_tests.outputs.count }}
+      test_matrix: ${{ steps.generate-matrix.outputs.test_matrix }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Count Integration Test Files
-        id: count_tests
-        run: echo "count=$(ls server/__tests__/suites/integration/*.test.ts | wc -l)" >> $GITHUB_ENV
-
-      - name: Export Test Count
-        run: echo "TEST_COUNT=$count" >> $GITHUB_ENV
+      - name: Count test files and generate matrix
+        id: generate-matrix
+        run: |
+          TEST_COUNT=$(ls server/__tests__/suites/integration | wc -l)
+          TEST_ARRAY=$(seq -s ',' 0 $((TEST_COUNT - 1)) | sed 's/^/[/' | sed 's/$/]/')
+          echo "test_matrix=$TEST_ARRAY" >> "$GITHUB_OUTPUT"
 
   test:
     needs: determine-test-count
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        test_instance: ${{ fromJson(format('[{0}]', join(',', range(0, fromJson(needs.determine-test-count.outputs.test_count) - 1)))) }}
-    defaults:
-      run:
-        working-directory: ./server
-    services:
-      postgres:
-        image: postgres:14
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-      redis:
-        image: redis
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 6379:6379
+        test_instance: ${{ fromJson(needs.determine-test-count.outputs.test_matrix) }}
     env:
       REDIS_HOST: localhost
       REDIS_PORT: 6379
