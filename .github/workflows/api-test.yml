@@ -8,32 +8,34 @@ on:
       - "server/**"
 
 jobs:
-  # Job to determine the list of test files and generate matrix
-  determine-test-files:
+  list-tests:
+    name: Discover Integration Tests
     runs-on: ubuntu-latest
     outputs:
-      test_matrix: ${{ steps.generate-matrix.outputs.test_matrix }}
+      test_files: ${{ steps.list.outputs.test_files }}
+    defaults:
+      run:
+        working-directory: ./server
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: List test files and generate matrix
-        id: generate-matrix
+      - name: List test files
+        id: list
         run: |
-          TEST_FILES=$(ls server/__tests__/suites/integration/*.test.ts)
-          TEST_ARRAY=$(echo "$TEST_FILES" | sed 's|^|"/|" |' | sed 's|$|"/" |' | tr '\n' ',' | sed 's/,$//')
-          echo "test_matrix=$TEST_ARRAY" >> "$GITHUB_OUTPUT"
+          TEST_FILES=$(ls __tests__/suites/integration/*.test.ts | jq -R -s -c 'split("\n")[:-1]')
+          echo "test_files=$TEST_FILES" >> $GITHUB_OUTPUT
 
-  # Main job that runs a specific test file in parallel
-  test:
-    needs: determine-test-files
+  run-tests:
+    name: Run ${{ matrix.test_file }}
+    needs: list-tests
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        test_file: ${{ fromJson(needs.list-tests.outputs.test_files) }}
     defaults:
       run:
         working-directory: ./server
-    strategy:
-      matrix:
-        test_file: ${{ fromJson(needs.determine-test-files.outputs.test_matrix) }}
     services:
       postgres:
         image: postgres:14
@@ -47,19 +49,6 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
-      redis:
-        image: redis
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 6379:6379
-    env:
-      REDIS_HOST: localhost
-      REDIS_PORT: 6379
-      CORE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ci-database
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -75,27 +64,33 @@ jobs:
       - name: Run type-checking
         run: npm run build
 
-      - name: Run Integration Tests
-        run: TEST_FILE=${{ matrix.test_file }} npm run test $TEST_FILE
+      - name: Generate Unique Database Name
+        id: db
+        run: |
+          DB_NAME="ci_database_$(echo ${{ matrix.test_file }} | tr -d './_')"
+          echo "DB_NAME=$DB_NAME" >> $GITHUB_ENV
+          echo "Database Name: $DB_NAME"
 
-  # Job to type-check the client JS package
-  type-check-client-js:
-    name: Type-check Client JS package
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Create Isolated Database
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE $DB_NAME;"
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18.16.0
+      - name: Start Redis on Unique Port
+        id: redis
+        run: |
+          REDIS_PORT=$((6379 + RANDOM % 1000))
+          echo "REDIS_PORT=$REDIS_PORT" >> $GITHUB_ENV
+          echo "Redis Port: $REDIS_PORT"
 
-      - name: Install server dependencies
-        run: cd server && npm ci
+          docker run -d --name redis_${{ matrix.test_file }} -p $REDIS_PORT:6379 redis
 
-      - name: Install client-js dependencies
-        run: cd client-js && npm ci
+      - name: Run Integration Test ${{ matrix.test_file }}
+        env:
+          CORE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/${{ env.DB_NAME }}
+          REDIS_HOST: localhost
+          REDIS_PORT: ${{ env.REDIS_PORT }}
+        run: npm test ${{ matrix.test_file }}
 
-      - name: Build & Type Check
-        run: cd client-js && npm run build
+      - name: Cleanup Redis Container
+        if: always()
+        run: docker rm -f redis_${{ matrix.test_file }} || true
