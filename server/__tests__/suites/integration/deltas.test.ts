@@ -64,7 +64,7 @@ describe('Deltas API', () => {
     it('should not sync player deltas on (0 gains)', async () => {
       const firstTrackResponse = await api.post(`/players/jonxslays`);
       expect(firstTrackResponse.status).toBe(201);
-      console.log('aadssssa');
+      console.log('sss');
 
       // Wait for the deltas to update
       await sleep(500);
