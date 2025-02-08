@@ -20,7 +20,7 @@ jobs:
       - name: Find Test Files
         id: set-matrix
         run: |
-          TEST_FILES=$(find server/__tests__/suites/integration -type f -name "*.test.ts"
+          TEST_FILES=$(find server/__tests__/suites/integration -type f -name "*.test.js" | jq -R -s -c 'split("\n")[:-1]')
           echo "Found test files: $TEST_FILES"
           echo "testFiles=$TEST_FILES" >> $GITHUB_OUTPUT
 
