@@ -8,11 +8,34 @@ on:
       - "server/**"
 
 jobs:
-  setup:
-    name: Setup Environment
+  discover-tests:
+    name: Discover Integration Test Files
     runs-on: ubuntu-latest
     outputs:
-      test_files: ${{ steps.list.outputs.test_files }}
+      testFiles: ${{ steps.set-matrix.outputs.testFiles }}
+      testIndexes: ${{ steps.set-matrix.outputs.testIndexes }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Find Test Files
+        id: set-matrix
+        run: |
+          TEST_FILES=$(find server/__tests__/suites/integration -type f -name "*.test.js" | jq -R -s -c 'split("\n")[:-1]')
+          TEST_COUNT=$(echo $TEST_FILES | jq 'length')
+          INDEXES=$(seq 0 $(($TEST_COUNT - 1)) | jq -c -s '.')
+
+          echo "testFiles=$TEST_FILES" >> $GITHUB_OUTPUT
+          echo "testIndexes=$INDEXES" >> $GITHUB_OUTPUT
+
+  test:
+    needs: discover-tests
+    name: Run Test - ${{ matrix.testFiles }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        testFiles: ${{ fromJson(needs.discover-tests.outputs.testFiles) }}
+        index: ${{ fromJson(needs.discover-tests.outputs.testIndexes) }}
     defaults:
       run:
         working-directory: ./server
@@ -29,6 +52,11 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
+
+    env:
+      DB_NAME: testdb_${{ matrix.index }}
+      REDIS_PORT: ${{ 7000 + matrix.index }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -41,78 +69,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run type-checking
-        run: npm run build
+      - name: Set Database URL
+        run: echo "CORE_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/$DB_NAME" >> $GITHUB_ENV
 
-      - name: List test files
-        id: list
+      - name: Create Test Database
         run: |
-          TEST_FILES=$(find __tests__/suites/integration -name "*.test.ts" | awk '{print NR-1 ":" $0}' | jq -R -s -c 'split("\n")[:-1] | map(split(":"))')
-          echo "test_files=$TEST_FILES" >> $GITHUB_OUTPUT
+          PGPASSWORD=postgres psql -U postgres -h localhost -p 5432 -c "CREATE DATABASE $DB_NAME;"
 
-  run-tests:
-    name: Run ${{ matrix.test_file }}
-    needs: setup
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        test_file: ${{ fromJson(needs.setup.outputs.test_files) }}
-    defaults:
-      run:
-        working-directory: ./server
-    services:
-      postgres:
-        image: postgres:14
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Start Redis Container
+        run: docker run -d --name redis_${{ matrix.index }} -p 0:6379 redis
 
-      - name: Extract Index and Test Name
-        id: extract
-        run: |
-          INDEX=$(echo "${{ matrix.test_file }}" | jq -r '.[0]')
-          FILE_NAME=$(basename "$(echo "${{ matrix.test_file }}" | jq -r '.[1]')" | sed 's/.test.ts//g')
-          echo "INDEX=$INDEX" >> $GITHUB_ENV
-          echo "FILE_NAME=$FILE_NAME" >> $GITHUB_ENV
-          echo "Using Index: $INDEX, File: $FILE_NAME"
-
-      - name: Generate Unique Database Name
-        id: db
-        run: |
-          DB_NAME="ci_database_${{ env.INDEX }}"
-          echo "DB_NAME=$DB_NAME" >> $GITHUB_ENV
-          echo "Database Name: $DB_NAME"
-
-      - name: Create Isolated Database
-        run: |
-          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE $DB_NAME;"
-
-      - name: Start Redis Instance
-        id: redis
-        run: |
-          REDIS_NAME="redis_${{ env.INDEX }}"
-          echo "REDIS_NAME=$REDIS_NAME" >> $GITHUB_ENV
-          docker run -d --name $REDIS_NAME redis
-
-      - name: Run Integration Test ${{ env.FILE_NAME }}
-        env:
-          CORE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/${{ env.DB_NAME }}
-          REDIS_HOST: localhost
-        run: npm test __tests__/suites/integration/${{ env.FILE_NAME }}.test.ts
-
-      - name: Cleanup Redis Container
-        if: always()
-        run: docker rm -f ${{ env.REDIS_NAME }} || true
+      - name: Run Integration Test
+        run: npm run test -- ${{ matrix.testFiles }}
 
   type-check-client-js:
     name: Type-check Client JS package
