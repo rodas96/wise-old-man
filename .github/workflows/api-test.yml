@@ -55,7 +55,6 @@ jobs:
 
     env:
       DB_NAME: testdb_${{ matrix.index }}
-      REDIS_PORT: ${{ 7000 + matrix.index }}
 
     steps:
       - name: Checkout code
@@ -69,6 +68,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Calculate Redis Port
+        id: calc-port
+        run: |
+          REDIS_PORT=$((7000 + $INDEX))
+          echo "REDIS_PORT=$REDIS_PORT" >> $GITHUB_ENV
+        env:
+          INDEX: ${{ matrix.index }}
+
       - name: Set Database URL
         run: echo "CORE_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/$DB_NAME" >> $GITHUB_ENV
 
@@ -77,7 +84,7 @@ jobs:
           PGPASSWORD=postgres psql -U postgres -h localhost -p 5432 -c "CREATE DATABASE $DB_NAME;"
 
       - name: Start Redis Container
-        run: docker run -d --name redis_${{ matrix.index }} -p 0:6379 redis
+        run: docker run -d --name redis_${{ matrix.index }} -p $REDIS_PORT:6379 redis
 
       - name: Run Integration Test
         run: npm run test -- ${{ matrix.testFiles }}
