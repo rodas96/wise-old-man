@@ -47,15 +47,6 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
-      redis:
-        image: redis
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 6379:6379
 
     steps:
       - name: Checkout code
@@ -72,24 +63,15 @@ jobs:
       - name: Set Test Name (DB & Execution)
         run: |
           TEST_NAME="${{ matrix.testFiles }}"
+          echo $TEST_NAME
           echo "TEST_NAME=$TEST_NAME" >> $GITHUB_ENV
           echo "DB_NAME=testdb_${{ matrix.testFiles }}" >> $GITHUB_ENV
           echo "REDIS_HOST=localhost" >> $GITHUB_ENV
-          echo "REDIS_PORT=6379" >> $GITHUB_ENV
 
-      - name: Wait for Redis to be Ready
+      - name: Calculate Redis Port
         run: |
-          echo "Waiting for Redis to be ready..."
-          for i in {1..10}; do
-            if redis-cli -h $REDIS_HOST -p $REDIS_PORT ping | grep -q "PONG"; then
-              echo "Redis is up!"
-              exit 0
-            fi
-            echo "Redis is not ready yet... retrying in 3s"
-            sleep 3
-          done
-          echo "Redis failed to start."
-          exit 1
+          REDIS_PORT=$((7000 + RANDOM % 1000))
+          echo "REDIS_PORT=$REDIS_PORT" >> $GITHUB_ENV
 
       - name: Set Database URL
         run: echo "CORE_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/$DB_NAME" >> $GITHUB_ENV
@@ -97,6 +79,9 @@ jobs:
       - name: Create Test Database
         run: |
           PGPASSWORD=postgres psql -U postgres -h localhost -p 5432 -c "CREATE DATABASE $DB_NAME;"
+
+      - name: Start Redis Container
+        run: docker run -d --name redis_$TEST_NAME -p $REDIS_PORT:6379 redis
 
       - name: Run Integration Test
         run: npm run test $TEST_NAME
