@@ -200,7 +200,6 @@ describe('General API', () => {
     it('should allow more than 100 requests per minute (with master API key)', async () => {
       // Flush redis to reset rate limits
       await resetRedis();
-      console.log('Reset Redis');
 
       // Create new API key
       const apiKeyResponse = await api.post(`/api-key`).send({

@@ -6,7 +6,6 @@ class RedisService {
 
   constructor() {
     this.redisClient = new IORedis(redisConfig);
-    console.log(`Connecting to Redis at ${redisConfig.host}:${redisConfig.port}`);
   }
 
   async getValue(baseKey: string, paramKey: string) {
