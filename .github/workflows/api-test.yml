@@ -21,7 +21,7 @@ jobs:
       - name: Find Test Files
         id: set-matrix
         run: |
-          TEST_FILES=$(find server/__tests__/suites/integration -type f -name "*.test.js" | jq -R -s -c 'split("\n")[:-1]')
+          TEST_FILES=$(find server/__tests__/suites/integration -type f -name "*.test.ts" | jq -R -s -c 'split("\n")[:-1]')
           echo "Found test files: $TEST_FILES"
           TEST_COUNT=$(echo $TEST_FILES | jq 'length')
           INDEXES=$(seq 0 $(($TEST_COUNT - 1)) | jq -c -s '.')
