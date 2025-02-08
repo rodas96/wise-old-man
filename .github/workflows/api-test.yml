@@ -62,7 +62,7 @@ jobs:
 
       - name: Set Test Name (DB & Execution)
         run: |
-          TEST_NAME=$(basename "${{ matrix.testFiles }}" .test.ts)
+          TEST_NAME="${{ matrix.testFiles }}"
           echo $TEST_NAME
           echo "TEST_NAME=$TEST_NAME" >> $GITHUB_ENV
           echo "DB_NAME=testdb_${{ matrix.testFiles }}" >> $GITHUB_ENV
