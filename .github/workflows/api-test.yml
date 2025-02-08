@@ -13,7 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       testFiles: ${{ steps.set-matrix.outputs.testFiles }}
-      testIndexes: ${{ steps.set-matrix.outputs.testIndexes }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -22,21 +21,23 @@ jobs:
         id: set-matrix
         run: |
           TEST_FILES=$(find server/__tests__/suites/integration -type f -name "*.test.ts" | jq -R -s -c 'split("\n")[:-1]')
-          echo "Found test files: $TEST_FILES"
-          TEST_COUNT=$(echo $TEST_FILES | jq 'length')
-          INDEXES=$(seq 0 $(($TEST_COUNT - 1)) | jq -c -s '.')
 
+          if [ "$TEST_FILES" == "[]" ] || [ -z "$TEST_FILES" ]; then
+            echo "No test files found."
+            TEST_FILES="[]"
+          fi
+
+          echo "Found test files: $TEST_FILES"
           echo "testFiles=$TEST_FILES" >> $GITHUB_OUTPUT
-          echo "testIndexes=$INDEXES" >> $GITHUB_OUTPUT
 
   test:
     needs: discover-tests
+    if: ${{ needs.discover-tests.outputs.testFiles != '[]' }} # Prevents running if no test files exist
     name: Run Test - ${{ matrix.testFiles }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
         testFiles: ${{ fromJson(needs.discover-tests.outputs.testFiles) }}
-        index: ${{ fromJson(needs.discover-tests.outputs.testIndexes) }}
     defaults:
       run:
         working-directory: ./server
@@ -54,9 +55,6 @@ jobs:
         ports:
           - 5432:5432
 
-    env:
-      DB_NAME: testdb_${{ matrix.index }}
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -69,13 +67,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Extract Filename for DB Name
+        id: extract-filename
+        run: |
+          FILE_NAME=$(basename "${{ matrix.testFiles }}" .test.ts)
+          echo "DB_NAME=testdb_$FILE_NAME" >> $GITHUB_ENV
+
       - name: Calculate Redis Port
         id: calc-port
         run: |
-          REDIS_PORT=$((7000 + $INDEX))
+          REDIS_PORT=$((7000 + RANDOM % 1000))  # Generates a unique Redis port in range 7000-7999
           echo "REDIS_PORT=$REDIS_PORT" >> $GITHUB_ENV
-        env:
-          INDEX: ${{ matrix.index }}
 
       - name: Set Database URL
         run: echo "CORE_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/$DB_NAME" >> $GITHUB_ENV
@@ -85,7 +87,7 @@ jobs:
           PGPASSWORD=postgres psql -U postgres -h localhost -p 5432 -c "CREATE DATABASE $DB_NAME;"
 
       - name: Start Redis Container
-        run: docker run -d --name redis_${{ matrix.index }} -p $REDIS_PORT:6379 redis
+        run: docker run -d --name redis_$DB_NAME -p $REDIS_PORT:6379 redis
 
       - name: Run Integration Test
         run: npm run test -- ${{ matrix.testFiles }}
