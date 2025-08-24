@@ -5,6 +5,7 @@ import {
   is10HP,
   is1Def,
   isZerker,
+  isVoider,
   get200msCount,
   getMinimumExp,
   getCappedExp,
@@ -231,7 +232,25 @@ describe('Util - Experience', () => {
 
     expect(
       isZerker({
-        defenceExperience: 67_983 // lvl 46
+        defenceExperience: 67_983
+      } as Snapshot)
+    ).toBe(false);
+  });
+
+  test('isVoider', () => {
+    expect(
+      isVoider({
+        defenceExperience: 42_000
+      } as Snapshot)
+    ).toBe(true);
+    expect(
+      isVoider({
+        defenceExperience: 41_999
+      } as Snapshot)
+    ).toBe(false);
+    expect(
+      isVoider({
+        defenceExperience: 42_001
       } as Snapshot)
     ).toBe(false);
   });

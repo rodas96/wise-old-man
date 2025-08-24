@@ -727,6 +727,7 @@ enum PlayerBuild {
   f2p_lvl3
   lvl3
   zerker
+  voider
   def1
   hp10
 

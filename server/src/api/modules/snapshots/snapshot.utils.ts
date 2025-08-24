@@ -31,6 +31,7 @@ import {
   FormattedSnapshot,
   SkillValue
 } from './snapshot.types';
+import { get } from 'http';
 
 // Skip Deadman Points and Legacy Bounty Hunter (hunter/rogue)
 export const SKIPPED_ACTIVITY_INDICES = [1, 4, 5];
@@ -335,6 +336,10 @@ function isZerker(snapshot: Snapshot) {
   return defLvl >= 40 && defLvl <= 45;
 }
 
+function isVoider(snapshot: Snapshot) {
+  return getLevel(snapshot.defenceExperience) === 42;
+}
+
 export {
   parseHiscoresSnapshot,
   formatSnapshot,
@@ -345,6 +350,7 @@ export {
   withinRange,
   isF2p,
   isZerker,
+  isVoider,
   is10HP,
   is1Def,
   isLvl3,

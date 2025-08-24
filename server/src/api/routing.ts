@@ -68,6 +68,76 @@ class RoutingHandler {
         next(new BadRequestError(zodError?.issues?.[0]?.message));
         return;
       }
+import * as Sentry from '@sentry/node';
+import express from 'express';
+import { ZodError } from 'zod';
+import logger from '../services/logging.service';
+import { BadRequestError, NotFoundError } from './errors';
+import competitionRouter from './modules/competitions/competition.router';
+import deltaRouter from './modules/deltas/delta.router';
+import efficiencyRouter from './modules/efficiency/efficiency.router';
+import generalRouter from './modules/general/general.router';
+import groupRouter from './modules/groups/group.router';
+import nameRouter from './modules/name-changes/name-change.router';
+import patronRouter from './modules/patrons/patron.router';
+import playerRouter from './modules/players/player.router';
+import recordRouter from './modules/records/record.router';
+
+class RoutingHandler {
+  router: express.Router;
+
+  constructor() {
+    this.router = express.Router();
+    this.setupRoutes();
+    this.setupFallbacks();
+  }
+
+  setupRoutes() {
+    this.router.use((_, res, next) => {
+      res.locals.requestStartTime = Date.now();
+      next();
+    });
+
+    // A simple ping/test endpoint
+    this.router.get('/', (_req, res) => {
+      res.json(process.env.npm_package_version);
+    });
+
+    // Register all the modules to the router
+    this.router.use(competitionRouter);
+    this.router.use(deltaRouter);
+    this.router.use(efficiencyRouter);
+    this.router.use(generalRouter);
+    this.router.use(groupRouter);
+    this.router.use(nameRouter);
+    this.router.use(patronRouter);
+    this.router.use(playerRouter);
+    this.router.use(recordRouter);
+  }
+
+  setupFallbacks() {
+    // Setup Sentry error tracking
+    this.router.use(Sentry.Handlers.errorHandler());
+
+    // Handle endpoint not found
+    this.router.use((_req, _res, next) => {
+      next(new NotFoundError('Endpoint was not found'));
+    });
+
+    // Catch and convert Zod errors to (400) BadRequest errors
+    this.router.use((error, _req, _res, next) => {
+      if (!error || !Array.isArray(error) || error.length === 0) {
+        next(error);
+        return;
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const zodError = (error[0] as any).errors as ZodError;
+
+      if (zodError instanceof ZodError) {
+        next(new BadRequestError(zodError?.issues?.[0]?.message));
+        return;
+      }
 
       next(error);
     });
